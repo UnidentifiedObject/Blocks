@@ -12,6 +12,10 @@ SCREEN_WIDTH = CELL_SIZE * GRID_WIDTH + GRID_OFFSET_X * 2
 SCREEN_HEIGHT = CELL_SIZE * (GRID_HEIGHT + 3)  # extra space for piece preview
 FPS = 60
 score = 0  # initialize score
+cleared_lines = []
+line_clear_timer = 0
+LINE_CLEAR_DURATION = 8  # frames
+
 
 # --- Colors ---
 WHITE = (255, 255, 255)
@@ -91,9 +95,17 @@ def draw_grid():
             )
             pygame.draw.rect(screen, GRAY, rect, 1)
             if grid[y][x]:
+                # Use same 3D-style block
                 pygame.draw.rect(screen, BLUE, rect.inflate(-4, -4))
+                lighter = tuple(min(255, c + 60) for c in BLUE)
+                darker = tuple(max(0, c - 60) for c in BLUE)
+                pygame.draw.line(screen, lighter, rect.topleft, rect.topright, 2)
+                pygame.draw.line(screen, lighter, rect.topleft, rect.bottomleft, 2)
+                pygame.draw.line(screen, darker, rect.bottomleft, rect.bottomright, 2)
+                pygame.draw.line(screen, darker, rect.topright, rect.bottomright, 2)
 
-def draw_shape(shape, top_left, color=BLACK):
+
+def draw_shape(shape, top_left, color=BLUE):
     for dx, dy in shape:
         x = top_left[0] + dx
         y = top_left[1] + dy
@@ -104,7 +116,21 @@ def draw_shape(shape, top_left, color=BLACK):
                 CELL_SIZE,
                 CELL_SIZE,
             )
-            pygame.draw.rect(screen, color, rect.inflate(-6, -6))
+            # Draw base block
+            pygame.draw.rect(screen, color, rect.inflate(-4, -4))
+
+            # Faux 3D bevel effect
+            lighter = tuple(min(255, c + 60) for c in color)
+            darker = tuple(max(0, c - 60) for c in color)
+
+            # Top and left highlights
+            pygame.draw.line(screen, lighter, rect.topleft, rect.topright, 2)
+            pygame.draw.line(screen, lighter, rect.topleft, rect.bottomleft, 2)
+
+            # Bottom and right shadows
+            pygame.draw.line(screen, darker, rect.bottomleft, rect.bottomright, 2)
+            pygame.draw.line(screen, darker, rect.topright, rect.bottomright, 2)
+
 
 def can_place(shape, top_left):
     for dx, dy in shape:
@@ -125,7 +151,6 @@ def place_shape(shape, top_left):
 
 
 def clear_full_lines():
-    global grid
     full_rows = []
     full_cols = []
 
@@ -139,17 +164,23 @@ def clear_full_lines():
         if all(grid[y][x] == 1 for y in range(GRID_HEIGHT)):
             full_cols.append(x)
 
+    # Store positions to highlight
+    cleared_positions = []
+
     # Clear full rows
     for y in full_rows:
         for x in range(GRID_WIDTH):
             grid[y][x] = 0
+            cleared_positions.append((x, y))
 
     # Clear full columns
     for x in full_cols:
         for y in range(GRID_HEIGHT):
             grid[y][x] = 0
+            cleared_positions.append((x, y))
 
-    return len(full_rows) + len(full_cols)
+    return cleared_positions
+
 
 def draw_score():
     font = pygame.font.SysFont(None, 36)
@@ -195,6 +226,18 @@ while running:
     draw_grid()
     draw_score()
 
+    # Draw flash effect for cleared lines
+    if line_clear_timer > 0:
+        for x, y in cleared_lines:
+            rect = pygame.Rect(
+                GRID_OFFSET_X + x * CELL_SIZE,
+                GRID_OFFSET_Y + y * CELL_SIZE,
+                CELL_SIZE,
+                CELL_SIZE,
+            )
+            pygame.draw.rect(screen, (255, 255, 255), rect.inflate(-4, -4))
+        line_clear_timer -= 1
+
     if not game_over:
         # mouse grid pos
         mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -234,8 +277,18 @@ while running:
                     draw_shape(current_shape, (grid_x, grid_y), color=BLACK)
                     if can_place(current_shape, (grid_x, grid_y)):
                         place_shape(current_shape, (grid_x, grid_y))
-                        lines_cleared = clear_full_lines()
-                        score += lines_cleared * 10
+                        cleared_positions = clear_full_lines()
+                        if cleared_positions:
+                            cleared_lines = cleared_positions
+                            line_clear_timer = LINE_CLEAR_DURATION
+                            score += len(cleared_positions) * 10
+
+                        cleared_positions = clear_full_lines()
+                        if cleared_positions:
+                            cleared_lines = cleared_positions
+                            line_clear_timer = LINE_CLEAR_DURATION
+                            score += len(set(cleared_positions)) * 10
+
                         current_shape = random.choice(SHAPES)
                         if not can_place_anywhere(current_shape):
                             game_over = True
